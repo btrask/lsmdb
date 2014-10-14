@@ -17,6 +17,8 @@
 #define LSMDB_WRITE_DBI (MDB_DBI_START+0x01)
 #define LSMDB_UNUSED_DBI (MDB_DBI_START+0x02)
 
+#define META_STATES 0x00
+
 typedef uint8_t LSMDB_state;
 enum {
 	STATE_NIL = 0,
@@ -154,7 +156,7 @@ void lsmdb_env_close(LSMDB_env *const env) {
 
 
 static int lsmdb_state_load(LSMDB_txn *const txn) {
-	uint8_t k = 0x00;
+	uint8_t k = META_STATES;
 	MDB_val key[1] = {{ sizeof(k), &k }}, val[1];
 	int rc = mdb_get(txn->txn, LSMDB_META_DBI, key, val);
 	if(MDB_NOTFOUND == rc) {
@@ -174,7 +176,7 @@ static int lsmdb_state_load(LSMDB_txn *const txn) {
 	return MDB_SUCCESS;
 }
 static int lsmdb_state_store(LSMDB_txn *const txn) {
-	uint8_t k = 0x00;
+	uint8_t k = META_STATES;
 	MDB_val key = { sizeof(k), &k };
 	MDB_val val = { sizeof(txn->state), txn->state };
 	return mdb_put(txn->txn, LSMDB_META_DBI, &key, &val, 0);

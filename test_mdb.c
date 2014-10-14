@@ -1,6 +1,8 @@
 #include "liblmdb/lmdb.h"
 #include "test.h"
 
+#define MDB_RDWR 0
+
 int main(void) {
 	fprintf(stderr, "%s\n", __FILE__);
 
