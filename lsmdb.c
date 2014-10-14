@@ -505,20 +505,36 @@ int lsmdb_compact(LSMDB_txn *const txn, LSMDB_level const level, size_t const st
 	return rc;
 }
 int lsmdb_autocompact(LSMDB_txn *const txn) {
-	size_t const base = 10000;
+	size_t const base = 5000;
 	size_t const growth = 10;
+	size_t const batch = 20000;
 
 	int rc;
 	MDB_stat stats[1];
 	rc = mdb_stat(txn->txn, LSMDB_WRITE_DBI, stats);
 	size_t const steps = stats->ms_entries;
-	if(steps < base) return MDB_SUCCESS;
 
-//	fprintf(stderr, "Level %d: %zu (%zu)\n", 0, steps, base);
-	rc = lsmdb_compact(txn, 0, steps);
-	assert(!rc);
+	// TODO: Store this in the database
+	static size_t _writes = 0;
+	static size_t _old = 0;
+
+	size_t const old = _old;
+	size_t const cur = _writes+steps;
+	_old = cur;
+
+
+	if(steps >= base) {
+//		fprintf(stderr, "Level %d: %zu (%zu)\n", 0, steps, base);
+		rc = lsmdb_compact(txn, 0, steps);
+		assert(!rc);
+		_writes += steps;
+	}
 
 	for(LSMDB_level i = 1; i < LEVEL_MAX; ++i) {
+		size_t const off = batch * (LEVEL_MAX-i) / LEVEL_MAX;
+		size_t const inc = (cur+off)/batch - (old+off)/batch;
+		if(inc < 1) continue;
+
 		MDB_dbi prev, next, pend;
 		rc = lsmdb_level_state(txn, i, &prev, &next, &pend);
 		if(MDB_NOTFOUND == rc) continue;
@@ -535,7 +551,7 @@ int lsmdb_autocompact(LSMDB_txn *const txn) {
 //		fprintf(stderr, "Level %d: %zu, %zu (%zu)\n", i, s1, s2, target);
 		if(s1+s2 < target) continue;
 
-		rc = lsmdb_compact(txn, i, steps);
+		rc = lsmdb_compact(txn, i, batch * inc);
 		assert(!rc);
 	}
 
