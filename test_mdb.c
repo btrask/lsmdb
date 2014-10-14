@@ -12,7 +12,7 @@ int main(void) {
 	MDB_env *env;
 	chk( mdb_env_create(&env) );
 	chk( mdb_env_set_mapsize(env, MAP_SIZE) );
-	chk( mdb_env_open(env, "./data.mdb", MDB_NOSUBDIR, 0600) );
+	chk( mdb_env_open(env, "./data.mdb", MDB_NOSUBDIR | MDB_WRITEMAP, 0600) );
 
 	MDB_dbi dbi;
 	{
@@ -22,15 +22,15 @@ int main(void) {
 		chk( mdb_txn_commit(txn) );
 	}
 
+	uint8_t k[KEY_SIZE];
+	uint8_t d[DATA_SIZE] = {};
 
 	for(int i = 0; i < WRITES / TXN_SIZE; ++i) {
 		MDB_txn *txn;
 		chk( mdb_txn_begin(env, NULL, MDB_RDWR, &txn) );
 
 		for(int j = 0; j < TXN_SIZE; ++j) {
-			uint8_t k[KEY_SIZE];
 			GENKEY(k);
-			uint8_t d[] = DATA;
 
 			MDB_val key = { sizeof(k), &k };
 			MDB_val data = { sizeof(d), &d };

@@ -28,15 +28,15 @@ int main(void) {
 	assert(!err);
 	assert(db);
 
+	uint8_t k[KEY_SIZE];
+	uint8_t d[DATA_SIZE] = {};
 
 	for(int i = 0; i < WRITES / TXN_SIZE; ++i) {
 		leveldb_writebatch_t *const batch = leveldb_writebatch_create();
 		assert(batch);
 
 		for(int j = 0; j < TXN_SIZE; ++j) {
-			uint8_t k[KEY_SIZE];
 			GENKEY(k);
-			uint8_t d[] = DATA;
 
 			leveldb_writebatch_put(batch, (char *)k, sizeof(k), (char *)d, sizeof(d));
 

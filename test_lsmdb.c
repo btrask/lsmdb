@@ -20,15 +20,15 @@ int main(void) {
 		chk( mdb_txn_commit(txn) );
 	}*/
 
+	uint8_t k[KEY_SIZE];
+	uint8_t d[DATA_SIZE] = {};
 
 	for(int i = 0; i < WRITES / TXN_SIZE; ++i) {
 		LSMDB_txn *txn;
 		chk( lsmdb_txn_begin(env, NULL, MDB_RDWR, &txn) );
 
 		for(int j = 0; j < TXN_SIZE; ++j) {
-			uint8_t k[KEY_SIZE];
 			GENKEY(k);
-			uint8_t d[] = DATA;
 
 			MDB_val key = { sizeof(k), &k };
 			MDB_val data = { sizeof(d), &d };

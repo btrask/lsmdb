@@ -9,7 +9,7 @@
 #define WRITES (1000 * 1000)
 #define TXN_SIZE 1000
 #define KEY_SIZE sizeof(uint64_t)
-#define DATA "123456789abcdef" // 16 bytes
+#define DATA_SIZE 16
 
 #ifdef SEQ
 #define GENKEY genkey_seq
