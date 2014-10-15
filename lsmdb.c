@@ -19,6 +19,10 @@
 
 #define META_STATES 0x00
 
+#define CX_LEVEL_BASE 5000
+#define CX_LEVEL_GROWTH 10
+#define CX_MERGE_BATCH 20000
+
 typedef uint8_t LSMDB_state;
 enum {
 	STATE_NIL = 0,
@@ -386,8 +390,8 @@ static int lsmdb_compact0(LSMDB_compaction *const c) {
 	}
 
 
-	size_t i = 0;
-	while(i <= c->steps) {
+	size_t i = 0, j = 0;
+	while(i*CX_LEVEL_GROWTH+j < c->steps*CX_LEVEL_GROWTH*2) {
 		if(MDB_NOTFOUND == rc1 && MDB_NOTFOUND == rc2) {
 			LSMDB_txn *const txn = c->txn;
 			LSMDB_level const level = c->level;
@@ -427,6 +431,7 @@ static int lsmdb_compact0(LSMDB_compaction *const c) {
 		} else {
 //			fprintf(stderr, "put k2 %s\n", tohex(&k2));
 			rc = mdb_cursor_put(c->c, &k2, &d2, MDB_APPEND);
+			++j;
 		}
 		assert(MDB_KEYEXIST != rc);
 		assert(MDB_SUCCESS == rc);
@@ -457,7 +462,7 @@ static int lsmdb_compact0(LSMDB_compaction *const c) {
 
 	}
 
-//	fprintf(stderr, "Compacted %d by %zu\n", c->level, i);
+	fprintf(stderr, "Merged %d (%zu) with %d (%zu)\n", c->level+0, i, c->level+1, j);
 	return MDB_SUCCESS;
 }
 int lsmdb_compact(LSMDB_txn *const txn, LSMDB_level const level, size_t const steps) {
@@ -505,14 +510,11 @@ int lsmdb_compact(LSMDB_txn *const txn, LSMDB_level const level, size_t const st
 	return rc;
 }
 int lsmdb_autocompact(LSMDB_txn *const txn) {
-	size_t const base = 5000;
-	size_t const growth = 10;
-	size_t const batch = 20000;
-
 	int rc;
 	MDB_stat stats[1];
 	rc = mdb_stat(txn->txn, LSMDB_WRITE_DBI, stats);
-	size_t const steps = stats->ms_entries;
+	assert(!rc);
+	size_t const steps = stats->ms_entries+1; // Off by one?
 
 	// TODO: Store this in the database
 	static size_t _writes = 0;
@@ -523,7 +525,7 @@ int lsmdb_autocompact(LSMDB_txn *const txn) {
 	_old = cur;
 
 
-	if(steps >= base) {
+	if(steps >= CX_LEVEL_BASE) {
 //		fprintf(stderr, "Level %d: %zu (%zu)\n", 0, steps, base);
 		rc = lsmdb_compact(txn, 0, steps);
 		assert(!rc);
@@ -531,8 +533,8 @@ int lsmdb_autocompact(LSMDB_txn *const txn) {
 	}
 
 	for(LSMDB_level i = 1; i < LEVEL_MAX; ++i) {
-		size_t const off = batch * (LEVEL_MAX-i) / LEVEL_MAX;
-		size_t const inc = (cur+off)/batch - (old+off)/batch;
+		size_t const off = CX_MERGE_BATCH * (LEVEL_MAX-i) / LEVEL_MAX;
+		size_t const inc = (cur+off)/CX_MERGE_BATCH - (old+off)/CX_MERGE_BATCH;
 		if(inc < 1) continue;
 
 		MDB_dbi prev, next, pend;
@@ -547,11 +549,11 @@ int lsmdb_autocompact(LSMDB_txn *const txn) {
 		assert(!rc);
 		size_t const s2 = stats->ms_entries;
 
-		size_t const target = base * (size_t)pow(growth, i);
+		size_t const target = CX_LEVEL_BASE * (size_t)pow(CX_LEVEL_GROWTH, i);
 //		fprintf(stderr, "Level %d: %zu, %zu (%zu)\n", i, s1, s2, target);
 		if(s1+s2 < target) continue;
 
-		rc = lsmdb_compact(txn, i, batch * inc);
+		rc = lsmdb_compact(txn, i, CX_MERGE_BATCH * inc * 2);
 		assert(!rc);
 	}
 
