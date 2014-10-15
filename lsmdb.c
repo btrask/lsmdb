@@ -12,12 +12,17 @@
 
 #define LEVEL_MAX 10
 
-#define MDB_DBI_START 2
-#define LSMDB_META_DBI (MDB_DBI_START+0x00)
-#define LSMDB_WRITE_DBI (MDB_DBI_START+0x01)
-#define LSMDB_UNUSED_DBI (MDB_DBI_START+0x02)
+#define TABLES_PER_LEVEL 3
+#define CURSORS_PER_LEVEL 2
+#define TABLE_MAX (LEVEL_MAX * TABLES_PER_LEVEL)
+#define CURSOR_MAX (LEVEL_MAX * CURSORS_PER_LEVEL - 1)
 
-#define META_STATES 0x00
+#define MDB_DBI_START 2
+#define LSMDB_UNUSED_DBI (MDB_DBI_START+0x00)
+#define LSMDB_WRITE_DBI (MDB_DBI_START+0x01)
+#define LSMDB_META_DBI (MDB_DBI_START+0x02)
+
+#define META_STATE 0x00
 
 #define CX_LEVEL_BASE 5000
 #define CX_LEVEL_GROWTH 10
@@ -44,7 +49,7 @@ struct LSMDB_txn {
 	unsigned flags;
 	MDB_txn *txn;
 
-	LSMDB_state state[LEVEL_MAX-1];
+	LSMDB_state state[LEVEL_MAX-1]; // TODO: Preserve state[0]
 	LSMDB_cursor *cursor;
 };
 
@@ -55,8 +60,8 @@ typedef struct {
 struct LSMDB_cursor {
 	LSMDB_txn *txn;
 	unsigned depth;
-	LSMDB_xcursor cursors[LEVEL_MAX*2-1];
-	LSMDB_xcursor *sorted[LEVEL_MAX*2-1];
+	LSMDB_xcursor cursors[CURSOR_MAX][1];
+	LSMDB_xcursor *sorted[CURSOR_MAX];
 	int dir;
 };
 
@@ -79,6 +84,22 @@ static uint64_t now(void) {
 	clock_gettime(CLOCK_MONOTONIC, &t);
 	return t.tv_sec * (uint64_t) 1e9 + t.tv_nsec;
 }*/
+
+
+
+static int mdb_cursor_seek(MDB_cursor *const cursor, MDB_val *const key, MDB_val *const data, int const dir) {
+	if(!key) return EINVAL;
+	MDB_val const orig = *key;
+	MDB_cursor_op const op = 0 == dir ? MDB_SET : MDB_SET_RANGE;
+	int rc = mdb_cursor_get(cursor, key, data, op);
+	if(dir >= 0) return rc;
+	if(MDB_SUCCESS == rc) {
+		MDB_txn *const txn = mdb_cursor_txn(cursor);
+		MDB_dbi const dbi = mdb_cursor_dbi(cursor);
+		if(0 == mdb_cmp(txn, dbi, &orig, key)) return rc;
+	} else if(MDB_NOTFOUND != rc) return rc;
+	return mdb_cursor_get(cursor, key, data, MDB_PREV);
+}
 
 
 
@@ -116,7 +137,7 @@ int lsmdb_env_create(LSMDB_env **const out) {
 		free(env);
 		return rc;
 	}
-	rc = mdb_env_set_maxdbs(env->env, LEVEL_MAX * 3);
+	rc = mdb_env_set_maxdbs(env->env, TABLE_MAX);
 	assert(MDB_SUCCESS == rc);
 	*out = env;
 	return MDB_SUCCESS;
@@ -135,7 +156,7 @@ int lsmdb_env_open(LSMDB_env *const env, char const *const name, unsigned const 
 	assert(MDB_SUCCESS == rc);
 
 	char const *const map = "0123456789abcdef";
-	for(LSMDB_level i = 0; i < LEVEL_MAX * 3; ++i) {
+	for(LSMDB_level i = 0; i < TABLE_MAX; ++i) {
 		char name[3] = { map[i/16], map[i%16], '\0' };
 		MDB_dbi dbi;
 		rc = mdb_dbi_open(txn, name, MDB_CREATE, &dbi);
@@ -160,7 +181,7 @@ void lsmdb_env_close(LSMDB_env *const env) {
 
 
 static int lsmdb_state_load(LSMDB_txn *const txn) {
-	uint8_t k = META_STATES;
+	uint8_t k = META_STATE;
 	MDB_val key[1] = {{ sizeof(k), &k }}, val[1];
 	int rc = mdb_get(txn->txn, LSMDB_META_DBI, key, val);
 	if(MDB_NOTFOUND == rc) {
@@ -180,7 +201,7 @@ static int lsmdb_state_load(LSMDB_txn *const txn) {
 	return MDB_SUCCESS;
 }
 static int lsmdb_state_store(LSMDB_txn *const txn) {
-	uint8_t k = META_STATES;
+	uint8_t k = META_STATE;
 	MDB_val key = { sizeof(k), &k };
 	MDB_val val = { sizeof(txn->state), txn->state };
 	return mdb_put(txn->txn, LSMDB_META_DBI, &key, &val, 0);
@@ -260,25 +281,61 @@ int lsmdb_put(LSMDB_txn *const txn, MDB_val const *const key, MDB_val const *con
 
 
 static int lsmdb_cursor_load(LSMDB_cursor *const cursor) {
-	if(!cursor) return EINVAL;
-	int rc;
+	cursor->dir = 0;
 	for(LSMDB_level i = 0; i < LEVEL_MAX; ++i) {
-		if(cursor->cursors[i].cursor) {
-			mdb_cursor_close(cursor->cursors[i].cursor);
+		LSMDB_xcursor *const x0 = cursor->cursors[i*2+0];
+		LSMDB_xcursor *const x1 = cursor->cursors[i*2+1];
+		x0->level = i*2+0;
+		x1->level = i*2+1;
+		cursor->sorted[i*2+0] = x0;
+		cursor->sorted[i*2+1] = x1;
+		if(x0->cursor) {
+			mdb_cursor_close(x0->cursor);
+			x0->cursor = NULL;
+		}
+		if(x1->cursor) {
+			mdb_cursor_close(x1->cursor);
+			x1->cursor = NULL;
 		}
 		MDB_dbi prev, next, pend;
-		rc = lsmdb_level_state(cursor->txn, i, &prev, &next, &pend);
-		if(MDB_NOTFOUND == rc) continue;
-		assert(!rc);
+		int rc = lsmdb_level_state(cursor->txn, i, &prev, &next, &pend);
+		if(MDB_NOTFOUND == rc) break;
+		if(MDB_SUCCESS != rc) return rc;
 //		fprintf(stderr, "level: %d, prev: %d, next: %d, pend: %d\n", i, prev, next, pend);
-		rc = mdb_cursor_open(cursor->txn->txn, prev, &cursor->cursors[i].cursor);
-		assert(!rc);
-		cursor->cursors[i].level = i;
-		cursor->sorted[i] = &cursor->cursors[i];
+		rc = mdb_cursor_open(cursor->txn->txn, next, &x0->cursor);
+		if(MDB_SUCCESS != rc) return rc;
+		rc = mdb_cursor_open(cursor->txn->txn, prev, &x1->cursor);
+		if(MDB_SUCCESS != rc) return rc;
 	}
-	cursor->dir = 0;
 	return MDB_SUCCESS;
 }
+
+static int lsmdb_cursor_cmp_fwd(LSMDB_xcursor const *const *const a, LSMDB_xcursor const *const *const b) {
+	MDB_val k1, k2;
+	int rc1 = mdb_cursor_get((*a)->cursor, &k1, NULL, MDB_GET_CURRENT);
+	int rc2 = mdb_cursor_get((*b)->cursor, &k2, NULL, MDB_GET_CURRENT);
+	if(MDB_SUCCESS == rc1 || MDB_SUCCESS == rc2) {
+		if(MDB_SUCCESS != rc1) return +1;
+		if(MDB_SUCCESS != rc2) return -1;
+		MDB_txn *const txn = mdb_cursor_txn((*a)->cursor);
+		MDB_dbi const dbi = mdb_cursor_dbi((*a)->cursor);
+		int x = mdb_cmp(txn, dbi, &k1, &k2);
+		if(0 != x) return x;
+	}
+	return ((*a)->level - (*b)->level);
+}
+static int lsmdb_cursor_cmp_rev(void *const a, void *const b) {
+	return lsmdb_cursor_cmp_fwd(a, b) * -1;
+}
+static void lsmdb_cursor_sort(LSMDB_cursor *const cursor, int const dir) {
+	if(0 == dir) return;
+	int (*cmp)();
+	if(dir > 0) cmp = lsmdb_cursor_cmp_fwd;
+	if(dir < 0) cmp = lsmdb_cursor_cmp_rev;
+	qsort(cursor->sorted, CURSOR_MAX, sizeof(LSMDB_xcursor), cmp);
+	cursor->dir = dir;
+}
+
 int lsmdb_cursor_open(LSMDB_txn *const txn, LSMDB_cursor **const out) {
 	if(!txn) return EINVAL;
 	LSMDB_cursor *cursor = calloc(1, sizeof(struct LSMDB_cursor));
@@ -295,19 +352,100 @@ assert(!rc);
 }
 void lsmdb_cursor_close(LSMDB_cursor *const cursor) {
 	if(!cursor) return;
-	for(LSMDB_level i = 0; i < LEVEL_MAX; ++i) {
-		mdb_cursor_close(cursor->cursors[i].cursor);
+	for(LSMDB_level i = 0; i < CURSOR_MAX; ++i) {
+		mdb_cursor_close(cursor->cursors[i]->cursor);
+		cursor->cursors[i]->cursor = NULL;
 	}
 	free(cursor);
 }
 // TODO: Cursor renewal
 
 
-
-
 int lsmdb_cursor_get(LSMDB_cursor *const cursor, MDB_val *const key, MDB_val *const data, MDB_cursor_op const op) {
-	return ENOTSUP;
+	switch(op) {
+		case MDB_GET_CURRENT: return lsmdb_cursor_current(cursor, key, data);
+		case MDB_SET: return lsmdb_cursor_seek(cursor, key, data, 0);
+		case MDB_SET_RANGE: return lsmdb_cursor_seek(cursor, key, data, +1);
+		case MDB_FIRST: return lsmdb_cursor_first(cursor, key, data, +1);
+		case MDB_LAST: return lsmdb_cursor_first(cursor, key, data, -1);
+		case MDB_PREV: return lsmdb_cursor_next(cursor, key, data, -1);
+		case MDB_NEXT: return lsmdb_cursor_next(cursor, key, data, +1);
+		default: return EINVAL;
+	}
 }
+int lsmdb_cursor_current(LSMDB_cursor *const cursor, MDB_val *const key, MDB_val *const data) {
+	if(!cursor) return EINVAL;
+	if(0 == cursor->dir) return EINVAL;
+	MDB_cursor *const c = cursor->sorted[0]->cursor;
+	if(!c) return EINVAL;
+	return mdb_cursor_get(c, key, data, MDB_GET_CURRENT);
+}
+int lsmdb_cursor_seek(LSMDB_cursor *const cursor, MDB_val *const key, MDB_val *const data, int const dir) {
+	if(!cursor) return EINVAL;
+	cursor->dir = 0;
+	for(LSMDB_level i = 0; i < CURSOR_MAX; ++i) {
+		MDB_cursor *const c = cursor->cursors[i]->cursor;
+		if(!c) continue;
+		MDB_val k = *key;
+		int rc = mdb_cursor_seek(c, &k, NULL, dir);
+		if(MDB_SUCCESS != rc && MDB_NOTFOUND != rc) return rc;
+	}
+	lsmdb_cursor_sort(cursor, dir);
+	return lsmdb_cursor_current(cursor, key, data);
+}
+int lsmdb_cursor_first(LSMDB_cursor *const cursor, MDB_val *const key, MDB_val *const data, int const dir) {
+	if(!cursor) return EINVAL;
+	if(0 == dir) return EINVAL;
+	MDB_cursor_op const op = dir > 0 ? MDB_FIRST : MDB_LAST;
+	cursor->dir = 0;
+	for(LSMDB_level i = 0; i < CURSOR_MAX; ++i) {
+		MDB_cursor *const c = cursor->cursors[i]->cursor;
+		if(!c) continue;
+		MDB_val ignore;
+		int rc = mdb_cursor_get(c, &ignore, NULL, op);
+		if(MDB_SUCCESS != rc && MDB_NOTFOUND != rc) return rc;
+	}
+	lsmdb_cursor_sort(cursor, dir);
+	return lsmdb_cursor_current(cursor, key, data);
+}
+int lsmdb_cursor_next(LSMDB_cursor *const cursor, MDB_val *const key, MDB_val *const data, int const dir) {
+	if(!cursor) return EINVAL;
+	if(0 == cursor->dir) return lsmdb_cursor_first(cursor, key, data, dir);
+	if(0 == dir) return EINVAL;
+
+	MDB_val orig;
+	int rc = lsmdb_cursor_current(cursor, &orig, NULL);
+	if(MDB_SUCCESS != rc) return rc;
+
+	MDB_txn *const txn = cursor->txn->txn;
+	MDB_cursor_op const op = dir < 0 ? MDB_PREV : MDB_NEXT;
+	int const flipped = (dir > 0) != (cursor->dir > 0);
+	int const olddir = cursor->dir;
+	cursor->dir = 0;
+
+	for(LSMDB_level i = 0; i < CURSOR_MAX; ++i) {
+		MDB_cursor *const c = cursor->sorted[i]->cursor;
+		if(!c) continue;
+		MDB_val k;
+		rc = mdb_cursor_get(c, &k, NULL, MDB_GET_CURRENT);
+		int const current =
+			MDB_SUCCESS == rc &&
+			0 == mdb_cmp(txn, LSMDB_WRITE_DBI, &orig, &k);
+		if(current) {
+			rc = mdb_cursor_get(c, &k, NULL, op);
+		} else {
+			if(!flipped) break;
+			MDB_val level = { sizeof(i), &i };
+			rc = mdb_cursor_seek(c, &orig, NULL, dir);
+		}
+		if(MDB_SUCCESS != rc && MDB_NOTFOUND != rc) return rc;
+	}
+
+	lsmdb_cursor_sort(cursor, dir);
+	return lsmdb_cursor_current(cursor, key, data);
+}
+
+
 int lsmdb_cursor_put(LSMDB_cursor *const cursor, MDB_val const *const key, MDB_val const *const data, unsigned const flags) {
 	if(!cursor) return EINVAL;
 	if(MDB_NOOVERWRITE & flags) {
@@ -315,8 +453,8 @@ int lsmdb_cursor_put(LSMDB_cursor *const cursor, MDB_val const *const key, MDB_v
 		if(MDB_SUCCESS == rc) return MDB_KEYEXIST;
 		if(MDB_NOTFOUND != rc) return rc;
 	}
-	assert(cursor->cursors[0].cursor);
-	return mdb_cursor_put(cursor->cursors[0].cursor, (MDB_val *)key, (MDB_val *)data, 0);
+	assert(cursor->cursors[0]->cursor);
+	return mdb_cursor_put(cursor->cursors[0]->cursor, (MDB_val *)key, (MDB_val *)data, 0);
 }
 
 
@@ -553,7 +691,7 @@ int lsmdb_autocompact(LSMDB_txn *const txn) {
 //		fprintf(stderr, "Level %d: %zu, %zu (%zu)\n", i, s1, s2, target);
 		if(s1+s2 < target) continue;
 
-		rc = lsmdb_compact(txn, i, CX_MERGE_BATCH * inc * 2);
+		rc = lsmdb_compact(txn, i, CX_MERGE_BATCH * inc * CURSORS_PER_LEVEL);
 		assert(!rc);
 	}
 
