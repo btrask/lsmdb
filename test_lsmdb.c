@@ -1,6 +1,8 @@
 #include "lsmdb.h"
 #include "test.h"
 
+//#define MDB_RDWR 0
+
 static void test_write(LSMDB_env *const env) {
 	uint8_t k[KEY_SIZE];
 	uint8_t d[DATA_SIZE] = {};
@@ -28,8 +30,6 @@ static void test_read(LSMDB_env *const env) {
 	chk( lsmdb_cursor_open(txn, &cursor) );
 
 	for(int i = 0; i < WRITES; ++i) {
-//		fprintf(stderr, "read %d\n", i);
-
 		MDB_val key, data;
 		chk( lsmdb_cursor_next(cursor, &key, &data, +1) );
 
@@ -40,7 +40,6 @@ static void test_read(LSMDB_env *const env) {
 
 	lsmdb_txn_abort(txn);
 }
-
 
 int main(void) {
 	fprintf(stderr, "%s\n", __FILE__);

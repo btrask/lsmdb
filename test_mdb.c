@@ -17,7 +17,6 @@ static void test_write(MDB_env *const env, MDB_dbi const dbi) {
 			MDB_val key = { sizeof(k), &k };
 			MDB_val data = { sizeof(d), &d };
 			chk( mdb_put(txn, dbi, &key, &data, PUT_FLAGS) );
-
 		}
 
 //		chk( lsmdb_autocompact(txn) );
@@ -51,7 +50,7 @@ int main(void) {
 	MDB_env *env;
 	chk( mdb_env_create(&env) );
 	chk( mdb_env_set_mapsize(env, MAP_SIZE) );
-	chk( mdb_env_open(env, "./data.mdb", MDB_NOSUBDIR | MDB_WRITEMAP, 0600) );
+	chk( mdb_env_open(env, "./data.mdb", MDB_NOSUBDIR, 0600) );
 
 	MDB_dbi dbi;
 	{
