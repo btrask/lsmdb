@@ -679,7 +679,7 @@ int lsmdb_autocompact(LSMDB_txn *const txn) {
 
 	if(steps >= CX_LEVEL_BASE) {
 //		fprintf(stderr, "Level %d: %zu (%zu)\n", 0, steps, base);
-		rc = lsmdb_compact(txn, 0, steps);
+		rc = lsmdb_compact(txn, 0, SIZE_MAX);
 		assert(!rc);
 		_writes += steps;
 	}
