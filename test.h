@@ -10,6 +10,8 @@
 #define TXN_SIZE 1000
 #define KEY_SIZE sizeof(uint64_t)
 #define DATA_SIZE 16
+#define SYNC 1
+#define READ 0
 
 #ifdef SEQ
 #define GENKEY genkey_seq

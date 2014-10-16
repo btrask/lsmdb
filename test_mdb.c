@@ -50,7 +50,7 @@ int main(void) {
 	MDB_env *env;
 	chk( mdb_env_create(&env) );
 	chk( mdb_env_set_mapsize(env, MAP_SIZE) );
-	chk( mdb_env_open(env, "./data.mdb", MDB_NOSUBDIR, 0600) );
+	chk( mdb_env_open(env, "./data.mdb", MDB_NOSUBDIR | (!SYNC * MDB_NOSYNC), 0600) );
 
 	MDB_dbi dbi;
 	{
@@ -61,7 +61,7 @@ int main(void) {
 	}
 
 	test_write(env, dbi);
-	test_read(env, dbi);
+	if(READ) test_read(env, dbi);
 
 	mdb_env_close(env);
 	return 0;

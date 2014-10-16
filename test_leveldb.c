@@ -6,7 +6,7 @@ static void test_write(leveldb_t *const db) {
 
 	leveldb_writeoptions_t *const wopts = leveldb_writeoptions_create();
 	assert(wopts);
-	leveldb_writeoptions_set_sync(wopts, 1);
+	leveldb_writeoptions_set_sync(wopts, SYNC);
 
 	uint8_t k[KEY_SIZE];
 	uint8_t d[DATA_SIZE] = {};
@@ -33,7 +33,7 @@ static void test_write(leveldb_t *const db) {
 static void test_read(leveldb_t *const db) {
 	leveldb_readoptions_t *const ropts = leveldb_readoptions_create();
 
-	// TODO
+	assert(0); // TODO
 
 	leveldb_readoptions_destroy(ropts);
 }
@@ -62,7 +62,7 @@ int main(void) {
 	assert(db);
 
 	test_write(db);
-	test_read(db);
+	if(READ) test_read(db);
 
 	leveldb_close(db);
 	leveldb_options_destroy(opts);
