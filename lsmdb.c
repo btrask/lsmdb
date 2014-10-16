@@ -467,13 +467,14 @@ int lsmdb_cursor_next(LSMDB_cursor *const cursor, MDB_val *const key, MDB_val *c
 
 int lsmdb_cursor_put(LSMDB_cursor *const cursor, MDB_val const *const key, MDB_val const *const data, unsigned const flags) {
 	if(!cursor) return EINVAL;
+	MDB_cursor *const c = cursor->cursors[0]->cursor;
+	if(!c) return EINVAL; // Should never happen.
 	if(MDB_NOOVERWRITE & flags) {
 		int rc = lsmdb_cursor_get(cursor, (MDB_val *)key, NULL, MDB_SET);
 		if(MDB_SUCCESS == rc) return MDB_KEYEXIST;
 		if(MDB_NOTFOUND != rc) return rc;
 	}
-	assert(cursor->cursors[0]->cursor);
-	return mdb_cursor_put(cursor->cursors[0]->cursor, (MDB_val *)key, (MDB_val *)data, 0);
+	return mdb_cursor_put(c, (MDB_val *)key, (MDB_val *)data, flags);
 }
 
 
@@ -490,6 +491,7 @@ typedef struct {
 } LSMDB_compaction;
 
 
+// TODO: Check errors properly
 #define ok(x) ({ \
 	int const __rc = (x); \
 	if(MDB_SUCCESS != __rc && MDB_NOTFOUND != __rc) { \
@@ -620,6 +622,7 @@ static int lsmdb_compact0(LSMDB_compaction *const c) {
 }
 int lsmdb_compact(LSMDB_txn *const txn, LSMDB_level const level, size_t const steps) {
 	if(!txn) return EINVAL;
+	if(txn->flags & MDB_RDONLY) return EACCES;
 	if(level > LEVEL_MAX) return EINVAL;
 	if(LEVEL_MAX == level) return MDB_SUCCESS;
 
@@ -663,6 +666,8 @@ int lsmdb_compact(LSMDB_txn *const txn, LSMDB_level const level, size_t const st
 	return rc;
 }
 int lsmdb_autocompact(LSMDB_txn *const txn) {
+	if(txn->flags & MDB_RDONLY) return EACCES;
+
 	int rc;
 	MDB_stat stats[1];
 	rc = mdb_stat(txn->txn, LSMDB_WRITE_DBI, stats);
