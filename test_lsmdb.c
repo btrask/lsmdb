@@ -28,7 +28,7 @@ static void test_read(LSMDB_env *const env) {
 	chk( lsmdb_cursor_open(txn, &cursor) );
 
 	for(int i = 0; i < WRITES; ++i) {
-		fprintf(stderr, "read %d\n", i);
+//		fprintf(stderr, "read %d\n", i);
 
 		MDB_val key, data;
 		chk( lsmdb_cursor_next(cursor, &key, &data, +1) );

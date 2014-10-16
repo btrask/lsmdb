@@ -6,7 +6,7 @@
 
 #define MAP_SIZE (1024 * 1024 * 256)
 
-#define WRITES (100 * 1000)
+#define WRITES (1000 * 1000)
 #define TXN_SIZE 1000
 #define KEY_SIZE sizeof(uint64_t)
 #define DATA_SIZE 16

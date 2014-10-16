@@ -446,7 +446,7 @@ int lsmdb_cursor_next(LSMDB_cursor *const cursor, MDB_val *const key, MDB_val *c
 			rc = mdb_cursor_get(c, &k, NULL, op);
 			if(MDB_SUCCESS != rc) {
 				mdb_cursor_renew(cursor->txn->txn, c);
-				fprintf(stderr, "dead cursor %d (level %d)\n", i, cursor->sorted[i]->level);
+//				fprintf(stderr, "dead cursor %d (level %d)\n", i, cursor->sorted[i]->level);
 			}
 		} else {
 			if(!flipped) break;
