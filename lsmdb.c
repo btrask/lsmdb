@@ -259,6 +259,7 @@ void lsmdb_txn_abort(LSMDB_txn *const txn) {
 	mdb_txn_abort(txn->txn);
 	free(txn);
 }
+// TODO: lsmdb_txn_reset/renew
 
 static int lsmdb_txn_cursor(LSMDB_txn *const txn) {
 	if(!txn) return EINVAL;
