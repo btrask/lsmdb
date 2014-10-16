@@ -15,7 +15,7 @@
 #define TABLES_PER_LEVEL 3
 #define CURSORS_PER_LEVEL 2
 #define TABLE_MAX (LEVEL_MAX * TABLES_PER_LEVEL)
-#define CURSOR_MAX (LEVEL_MAX * CURSORS_PER_LEVEL - 1)
+#define CURSOR_MAX (LEVEL_MAX * CURSORS_PER_LEVEL)
 
 #define MDB_DBI_START 2
 #define LSMDB_UNUSED_DBI (MDB_DBI_START+0x00)
@@ -268,6 +268,7 @@ static int lsmdb_txn_cursor(LSMDB_txn *const txn) {
 	}
 	return MDB_SUCCESS;
 }
+
 int lsmdb_get(LSMDB_txn *const txn, MDB_val const *const key, MDB_val *const data) {
 	int rc = lsmdb_txn_cursor(txn);
 	if(MDB_SUCCESS != rc) return rc;
@@ -278,17 +279,20 @@ int lsmdb_put(LSMDB_txn *const txn, MDB_val const *const key, MDB_val const *con
 	if(MDB_SUCCESS != rc) return rc;
 	return lsmdb_cursor_put(txn->cursor, key, data, flags);
 }
+int lsmdb_cmp(LSMDB_txn *const txn, MDB_val const *const a, MDB_val const *const b) {
+	return mdb_cmp(txn->txn, LSMDB_WRITE_DBI, a, b);
+}
 
 
 static int lsmdb_cursor_load(LSMDB_cursor *const cursor) {
 	cursor->dir = 0;
+	for(LSMDB_level i = 0; i < CURSOR_MAX; ++i) {
+		cursor->cursors[i]->level = i;
+		cursor->sorted[i] = cursor->cursors[i];
+	}
 	for(LSMDB_level i = 0; i < LEVEL_MAX; ++i) {
 		LSMDB_xcursor *const x0 = cursor->cursors[i*2+0];
 		LSMDB_xcursor *const x1 = cursor->cursors[i*2+1];
-		x0->level = i*2+0;
-		x1->level = i*2+1;
-		cursor->sorted[i*2+0] = x0;
-		cursor->sorted[i*2+1] = x1;
 		if(x0->cursor) {
 			mdb_cursor_close(x0->cursor);
 			x0->cursor = NULL;
@@ -304,6 +308,7 @@ static int lsmdb_cursor_load(LSMDB_cursor *const cursor) {
 //		fprintf(stderr, "level: %d, prev: %d, next: %d, pend: %d\n", i, prev, next, pend);
 		rc = mdb_cursor_open(cursor->txn->txn, next, &x0->cursor);
 		if(MDB_SUCCESS != rc) return rc;
+		if(0 == i) continue; // Level 0 doesn't have a prev table.
 		rc = mdb_cursor_open(cursor->txn->txn, prev, &x1->cursor);
 		if(MDB_SUCCESS != rc) return rc;
 	}
@@ -312,6 +317,9 @@ static int lsmdb_cursor_load(LSMDB_cursor *const cursor) {
 
 static int lsmdb_cursor_cmp_fwd(LSMDB_xcursor const *const *const a, LSMDB_xcursor const *const *const b) {
 	MDB_val k1, k2;
+	if(!(*a)->cursor && !(*b)->cursor) return 0;
+	if(!(*a)->cursor) return +1;
+	if(!(*b)->cursor) return -1;
 	int rc1 = mdb_cursor_get((*a)->cursor, &k1, NULL, MDB_GET_CURRENT);
 	int rc2 = mdb_cursor_get((*b)->cursor, &k2, NULL, MDB_GET_CURRENT);
 	if(MDB_SUCCESS == rc1 || MDB_SUCCESS == rc2) {
@@ -332,7 +340,7 @@ static void lsmdb_cursor_sort(LSMDB_cursor *const cursor, int const dir) {
 	int (*cmp)();
 	if(dir > 0) cmp = lsmdb_cursor_cmp_fwd;
 	if(dir < 0) cmp = lsmdb_cursor_cmp_rev;
-	qsort(cursor->sorted, CURSOR_MAX, sizeof(LSMDB_xcursor), cmp);
+	qsort(cursor->sorted, CURSOR_MAX, sizeof(LSMDB_xcursor *), cmp);
 	cursor->dir = dir;
 }
 
@@ -391,7 +399,9 @@ int lsmdb_cursor_seek(LSMDB_cursor *const cursor, MDB_val *const key, MDB_val *c
 		if(MDB_SUCCESS != rc && MDB_NOTFOUND != rc) return rc;
 	}
 	lsmdb_cursor_sort(cursor, dir);
-	return lsmdb_cursor_current(cursor, key, data);
+	int rc = lsmdb_cursor_current(cursor, key, data);
+	if(EINVAL == rc) return MDB_NOTFOUND;
+	return rc;
 }
 int lsmdb_cursor_first(LSMDB_cursor *const cursor, MDB_val *const key, MDB_val *const data, int const dir) {
 	if(!cursor) return EINVAL;
@@ -406,7 +416,9 @@ int lsmdb_cursor_first(LSMDB_cursor *const cursor, MDB_val *const key, MDB_val *
 		if(MDB_SUCCESS != rc && MDB_NOTFOUND != rc) return rc;
 	}
 	lsmdb_cursor_sort(cursor, dir);
-	return lsmdb_cursor_current(cursor, key, data);
+	int rc = lsmdb_cursor_current(cursor, key, data);
+	if(EINVAL == rc) return MDB_NOTFOUND;
+	return rc;
 }
 int lsmdb_cursor_next(LSMDB_cursor *const cursor, MDB_val *const key, MDB_val *const data, int const dir) {
 	if(!cursor) return EINVAL;
@@ -417,7 +429,6 @@ int lsmdb_cursor_next(LSMDB_cursor *const cursor, MDB_val *const key, MDB_val *c
 	int rc = lsmdb_cursor_current(cursor, &orig, NULL);
 	if(MDB_SUCCESS != rc) return rc;
 
-	MDB_txn *const txn = cursor->txn->txn;
 	MDB_cursor_op const op = dir < 0 ? MDB_PREV : MDB_NEXT;
 	int const flipped = (dir > 0) != (cursor->dir > 0);
 	int const olddir = cursor->dir;
@@ -425,24 +436,31 @@ int lsmdb_cursor_next(LSMDB_cursor *const cursor, MDB_val *const key, MDB_val *c
 
 	for(LSMDB_level i = 0; i < CURSOR_MAX; ++i) {
 		MDB_cursor *const c = cursor->sorted[i]->cursor;
-		if(!c) continue;
+		if(!c) break;
 		MDB_val k;
 		rc = mdb_cursor_get(c, &k, NULL, MDB_GET_CURRENT);
 		int const current =
 			MDB_SUCCESS == rc &&
-			0 == mdb_cmp(txn, LSMDB_WRITE_DBI, &orig, &k);
+			0 == lsmdb_cmp(cursor->txn, &orig, &k);
 		if(current) {
 			rc = mdb_cursor_get(c, &k, NULL, op);
+			if(MDB_SUCCESS != rc) {
+				mdb_cursor_renew(cursor->txn->txn, c);
+				fprintf(stderr, "dead cursor %d (level %d)\n", i, cursor->sorted[i]->level);
+			}
 		} else {
 			if(!flipped) break;
 			MDB_val level = { sizeof(i), &i };
 			rc = mdb_cursor_seek(c, &orig, NULL, dir);
+			assert(!rc);
 		}
 		if(MDB_SUCCESS != rc && MDB_NOTFOUND != rc) return rc;
 	}
 
 	lsmdb_cursor_sort(cursor, dir);
-	return lsmdb_cursor_current(cursor, key, data);
+	rc = lsmdb_cursor_current(cursor, key, data);
+	if(EINVAL == rc) return MDB_NOTFOUND;
+	return rc;
 }
 
 
@@ -470,10 +488,6 @@ typedef struct {
 	MDB_cursor *c;
 } LSMDB_compaction;
 
-static int mdb_cursor_cmp(MDB_cursor *const cursor, MDB_val const *const a, MDB_val const *const b) {
-	return mdb_cmp(mdb_cursor_txn(cursor), mdb_cursor_dbi(cursor), a, b);
-}
-
 
 #define ok(x) ({ \
 	int const __rc = (x); \
@@ -497,10 +511,10 @@ static int lsmdb_compact0(LSMDB_compaction *const c) {
 		ok( rc1 = mdb_cursor_get(c->a, &k1, &d1, MDB_SET_RANGE) );
 		ok( rc2 = mdb_cursor_get(c->b, &k2, &d2, MDB_SET_RANGE) );
 
-		if(MDB_SUCCESS == rc1 && 0 == mdb_cursor_cmp(c->a, &key, &k1)) {
+		if(MDB_SUCCESS == rc1 && 0 == lsmdb_cmp(c->txn, &key, &k1)) {
 			ok( rc1 = mdb_cursor_get(c->a, &k1, &d1, MDB_NEXT) );
 		}
-		if(MDB_SUCCESS == rc2 && 0 == mdb_cursor_cmp(c->b, &key, &k2)) {
+		if(MDB_SUCCESS == rc2 && 0 == lsmdb_cmp(c->txn, &key, &k2)) {
 			ok( rc2 = mdb_cursor_get(c->b, &k2, &d2, MDB_NEXT) );
 		}
 	} else if(MDB_NOTFOUND == rc) {
@@ -560,7 +574,7 @@ static int lsmdb_compact0(LSMDB_compaction *const c) {
 		int x = 0;
 		if(MDB_NOTFOUND == rc1) x = +1;
 		if(MDB_NOTFOUND == rc2) x = -1;
-		if(0 == x) x = mdb_cursor_cmp(c->c, &k1, &k2);
+		if(0 == x) x = lsmdb_cmp(c->txn, &k1, &k2);
 
 		if(x <= 0) {
 //			fprintf(stderr, "put k1 %s\n", tohex(&k1));

@@ -20,6 +20,7 @@ void lsmdb_txn_abort(LSMDB_txn *const txn);
 
 int lsmdb_get(LSMDB_txn *const txn, MDB_val const *const key, MDB_val *const data);
 int lsmdb_put(LSMDB_txn *const txn, MDB_val const *const key, MDB_val const *const data, unsigned const flags);
+int lsmdb_cmp(LSMDB_txn *const txn, MDB_val const *const a, MDB_val const *const b);
 
 int lsmdb_cursor_open(LSMDB_txn *const txn, LSMDB_cursor **const out);
 void lsmdb_cursor_close(LSMDB_cursor *const cursor);
