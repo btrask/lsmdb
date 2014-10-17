@@ -269,6 +269,18 @@ static int lsmdb_txn_cursor(LSMDB_txn *const txn) {
 	}
 	return MDB_SUCCESS;
 }
+static int lsmdb_cursor_del0(LSMDB_cursor *const cursor, MDB_val const *const key) {
+	if(!cursor) return EINVAL;
+	for(LSMDB_level i = 0; i < CURSOR_MAX; ++i) {
+		MDB_cursor *const c = cursor->cursors[i]->cursor;
+		if(!c) continue;
+		int rc = mdb_cursor_get(c, (MDB_val *)key, NULL, MDB_SET);
+		if(MDB_SUCCESS != rc) continue;
+		rc = mdb_cursor_del(c, 0);
+		if(MDB_SUCCESS != rc) return rc;
+	}
+	return MDB_SUCCESS;
+}
 
 int lsmdb_get(LSMDB_txn *const txn, MDB_val const *const key, MDB_val *const data) {
 	int rc = lsmdb_txn_cursor(txn);
@@ -279,6 +291,11 @@ int lsmdb_put(LSMDB_txn *const txn, MDB_val const *const key, MDB_val const *con
 	int rc = lsmdb_txn_cursor(txn);
 	if(MDB_SUCCESS != rc) return rc;
 	return lsmdb_cursor_put(txn->cursor, key, data, flags);
+}
+int lsmdb_del(LSMDB_txn *const txn, MDB_val const *const key) {
+	int rc = lsmdb_txn_cursor(txn);
+	if(MDB_SUCCESS != rc) return rc;
+	return lsmdb_cursor_del0(txn->cursor, key);
 }
 int lsmdb_cmp(LSMDB_txn *const txn, MDB_val const *const a, MDB_val const *const b) {
 	return mdb_cmp(txn->txn, LSMDB_WRITE_DBI, a, b);
@@ -475,6 +492,12 @@ int lsmdb_cursor_put(LSMDB_cursor *const cursor, MDB_val const *const key, MDB_v
 		if(MDB_NOTFOUND != rc) return rc;
 	}
 	return mdb_cursor_put(c, (MDB_val *)key, (MDB_val *)data, flags);
+}
+int lsmdb_cursor_del(LSMDB_cursor *const cursor) {
+	MDB_val key;
+	int rc = lsmdb_cursor_current(cursor, &key, NULL);
+	if(MDB_SUCCESS != rc) return rc;
+	return lsmdb_cursor_del0(cursor, &key);
 }
 
 

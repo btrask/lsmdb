@@ -20,6 +20,7 @@ void lsmdb_txn_abort(LSMDB_txn *const txn);
 
 int lsmdb_get(LSMDB_txn *const txn, MDB_val const *const key, MDB_val *const data);
 int lsmdb_put(LSMDB_txn *const txn, MDB_val const *const key, MDB_val const *const data, unsigned const flags);
+int lsmdb_del(LSMDB_txn *const txn, MDB_val const *const key);
 int lsmdb_cmp(LSMDB_txn *const txn, MDB_val const *const a, MDB_val const *const b);
 
 int lsmdb_cursor_open(LSMDB_txn *const txn, LSMDB_cursor **const out);
@@ -32,6 +33,7 @@ int lsmdb_cursor_first(LSMDB_cursor *const cursor, MDB_val *const key, MDB_val *
 int lsmdb_cursor_next(LSMDB_cursor *const cursor, MDB_val *const key, MDB_val *const data, int const dir);
 
 int lsmdb_cursor_put(LSMDB_cursor *const cursor, MDB_val const *const key, MDB_val const *const data, unsigned const flags);
+int lsmdb_cursor_del(LSMDB_cursor *const cursor);
 
 int lsmdb_compact(LSMDB_txn *const txn, LSMDB_level const level, size_t const steps);
 int lsmdb_autocompact(LSMDB_txn *const txn);
