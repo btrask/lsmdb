@@ -18,9 +18,9 @@ test_mdb: test_mdb.c test.h
 
 .phony: clean
 clean:
-	cd liblmdb && make clean
-	rm test_lsmdb
-	cd snappy && make clean
-	cd leveldb && make clean
-	rm test_leveldb
-	rm test_mdb
+	- cd liblmdb && make clean
+	- rm test_lsmdb
+	- cd snappy && make clean
+	- cd leveldb && make clean
+	- rm test_leveldb
+	- rm test_mdb
