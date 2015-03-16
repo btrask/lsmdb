@@ -7,6 +7,7 @@ LSMDB provides its own interface to the application, which is similar to MDB exc
 - It doesn't support MDB's dup-sort.
 - Some minor APIs simply aren't implemented/exposed yet.
 - It uses scalars instead of enums to specify scan directions. For example, `lsmdb_cursor_next()` accepts `+1` (next) or `-1` (previous). A wrapper supporting existing `MDB_cursor_op`s is included.
+- Each transaction keeps a cursor for cases where it needs to use one internally, to avoid frequently allocating and freeing memory. The cursor is also available to clients in case they want to use it briefly.
 
 LSMDB has many shortcomings and isn't intended to be production-ready. However, I think it demonstrates a viable approach for a simple, reliable and high-performance LSM-tree in around 800 lines of code (not counting the code for MDB, which itself is quite small).
 
@@ -19,7 +20,7 @@ Improvements I would desire in a production version:
 - If MDB provided an efficient way to rename DBIs, LSMDB would need to do less work to track level meta-data.
 - During periods of no writes, LSMDB should continue compacting into a single level in order to reach full MDB read performance.
 - Provide equivalents to `mdb_dump`, `mdb_load`, `mdb_stat`, etc.
-- Obviously use more error checking and general testing.
+- Obviously use more error checking and general testing. If you get an internal assertion failure while writing data, you may need to increase the map size.
 
 Notes regarding the benchmarks:
 - This is a write-only benchmark with a single writer.
