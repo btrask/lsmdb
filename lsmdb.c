@@ -704,7 +704,7 @@ static int lsmdb_compact0(LSMDB_compaction *const c) {
 
 	}
 
-	fprintf(stderr, "Merged %d (%zu) with %d (%zu)\n", c->level+0, i, c->level+1, j);
+//	fprintf(stderr, "Merged %d (%zu) with %d (%zu)\n", c->level+0, i, c->level+1, j);
 	return MDB_SUCCESS;
 }
 int lsmdb_compact(LSMDB_txn *const txn, LSMDB_level const level, size_t const steps) {
