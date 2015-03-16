@@ -71,3 +71,5 @@ The other big potential improvement for LSMDB is if it supported concurrent comp
 
 At any rate, LSMDB's ability to speed up MDB while using MDB as-is may point the way for future write-optimized database engines.
 
+LSMDB is provided under the OpenLDAP Public License, just like MDB.
+
