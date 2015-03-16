@@ -30,7 +30,7 @@ Notes regarding the benchmarks:
 - By default, 1000 values are written per transaction. This is realistic for applications and prevents micro-benchmarking transaction speed (which should be the same for every competent database).
 - Keys are written in pseudo-random order (sequential integers in reversed byte order).
 - Key size is 8 bytes and value size is 16 bytes, which is small but not unreasonable. Large values should never be stored in any database due to locking, but LSM-trees take it even worse due to compaction.
-- Testing is done on a laptop with Samsung 840 SSD.
+- Testing was done on a laptop with Samsung 840 SSD under Xen with full disk encryption. Similar results were obtained on a laptop with an older Kingspec SSD without Xen or encryption.
 
 2,000,000 values, random order:
 ```
