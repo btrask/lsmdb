@@ -1,4 +1,4 @@
-CFLAGS := -Wall -Werror -Wno-unused -std=gnu99
+CFLAGS += -Wall -Werror -Wno-unused -std=gnu99
 
 .phony: all
 all: test_lsmdb test_leveldb test_mdb
