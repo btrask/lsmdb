@@ -3,6 +3,8 @@ test
 test_mdb
 data.mdb
 data.mdb-lock
+liblmdb/mdb_dump
+liblmdb/mdb_load
 
 test_lsmdb
 data.lsmdb
