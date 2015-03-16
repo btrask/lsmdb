@@ -17,6 +17,10 @@ void lsmdb_env_close(LSMDB_env *const env);
 int lsmdb_txn_begin(LSMDB_env *const env, LSMDB_txn *const parent, unsigned const flags, LSMDB_txn **const out);
 int lsmdb_txn_commit(LSMDB_txn *const txn);
 void lsmdb_txn_abort(LSMDB_txn *const txn);
+void lsmdb_txn_reset(LSMDB_txn *const txn);
+int lsmdb_txn_renew(LSMDB_txn *const txn);
+int lsmdb_txn_get_flags(LSMDB_txn *const txn, unsigned *const flags);
+int lsmdb_txn_cursor(LSMDB_txn *const txn, LSMDB_cursor **const out);
 
 int lsmdb_get(LSMDB_txn *const txn, MDB_val const *const key, MDB_val *const data);
 int lsmdb_put(LSMDB_txn *const txn, MDB_val const *const key, MDB_val const *const data, unsigned const flags);
@@ -25,6 +29,9 @@ int lsmdb_cmp(LSMDB_txn *const txn, MDB_val const *const a, MDB_val const *const
 
 int lsmdb_cursor_open(LSMDB_txn *const txn, LSMDB_cursor **const out);
 void lsmdb_cursor_close(LSMDB_cursor *const cursor);
+int lsmdb_cursor_renew(LSMDB_txn *const txn, LSMDB_cursor *const cursor);
+int lsmdb_cursor_clear(LSMDB_cursor *const cursor);
+LSMDB_txn *lsmdb_cursor_txn(LSMDB_cursor *const cursor);
 
 int lsmdb_cursor_get(LSMDB_cursor *const cursor, MDB_val *const key, MDB_val *const data, MDB_cursor_op const op);
 int lsmdb_cursor_current(LSMDB_cursor *const cursor, MDB_val *const key, MDB_val *const data);
