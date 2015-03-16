@@ -3,12 +3,12 @@
 LSMDB is a proof-of-concept LSM-tree built on top of MDB (AKA LMDB). It only interacts with MDB using the standard MDB API, and doesn't require any changes to the MDB code or file format.
 
 LSMDB provides its own interface to the application, which is similar to MDB except for the following differences:
-- It uses scalars instead of enums to specify scan directions. For example, `lsmdb_cursor_next()` accepts `+1` (next) or `-1` (previous).
 - It doesn't support MDB's DBIs, which are used internally as levels of the LSM-tree. Additionally, using separate DBIs would actually hurt the performance of an LSM-tree, because the goal is to combine as many writes as possible.
 - It doesn't support MDB's dup-sort.
 - Some minor APIs simply aren't implemented/exposed yet.
+- It uses scalars instead of enums to specify scan directions. For example, `lsmdb_cursor_next()` accepts `+1` (next) or `-1` (previous). A wrapper supporting existing `MDB_cursor_op`s is included.
 
-LSMDB has many shortcomings and isn't intended to be production-ready. However, I think it demonstrates a viable approach for a simple, reliable and high-performance LSM-tree in under 1000 lines of code (not counting the code for MDB, which itself is quite small).
+LSMDB has many shortcomings and isn't intended to be production-ready. However, I think it demonstrates a viable approach for a simple, reliable and high-performance LSM-tree in around 800 lines of code (not counting the code for MDB, which itself is quite small).
 
 Improvements I would desire in a production version:
 - Use two instances of MDB internally, one for level 0 and one for levels 1+, in order to have fully concurrent compaction.
@@ -17,6 +17,7 @@ Improvements I would desire in a production version:
 	- Compactions write-lock 1+ and read-lock 0.
 - If MDB provided efficient ranged deletion, incremental compaction would be extremely fast and easy (not relying on 2MB chunks like LevelDB or requiring 2X space overhead like LSMDB currently).
 - If MDB provided an efficient way to rename DBIs, LSMDB would need to do less work to track level meta-data.
+- During periods of no writes, LSMDB should continue compacting into a single level in order to reach full MDB read performance.
 - Provide equivalents to `mdb_dump`, `mdb_load`, `mdb_stat`, etc.
 - Obviously use more error checking and general testing.
 
