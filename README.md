@@ -20,6 +20,7 @@ Improvements I would desire in a production version:
 - If MDB provided an efficient way to rename DBIs, LSMDB would need to do less work to track level meta-data.
 - During periods of no writes, LSMDB should continue compacting into a single level in order to reach full MDB read performance.
 - Support `MDB_APPEND` by writing directly into the highest level.
+- Optionally support bloom filters to minimize disk seeks.
 - Provide equivalents to `mdb_dump`, `mdb_load`, `mdb_stat`, etc.
 - Obviously use more error checking and general testing. If you get an internal assertion failure while writing data, you may need to increase the map size.
 
