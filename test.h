@@ -12,8 +12,9 @@
 #define DATA_SIZE 16
 #define SYNC 1
 #define READ 0
+#define SEQ 0
 
-#ifdef SEQ
+#if SEQ
 #define GENKEY genkey_seq
 #define PUT_FLAGS MDB_APPEND
 #else
