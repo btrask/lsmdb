@@ -9,7 +9,7 @@
  * <http://www.OpenLDAP.org/license.html>.
  */
 #include <stdint.h>
-#include "liblmdb/lmdb.h"
+#include "deps/liblmdb/lmdb.h"
 
 #define MDB_RDWR 0
 

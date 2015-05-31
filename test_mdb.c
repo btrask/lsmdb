@@ -1,4 +1,4 @@
-#include "liblmdb/lmdb.h"
+#include "deps/liblmdb/lmdb.h"
 #include "test.h"
 
 #define MDB_RDWR 0
